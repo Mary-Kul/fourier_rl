@@ -1,0 +1,5 @@
+.idea/*
+.ipynb_checkpoints/
+*.log
+.cache
+rlkit_master/data/*
