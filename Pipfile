@@ -1,0 +1,22 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+gym = "*"
+mujoco-py = "*"
+torch = "*"
+python-dateutil = "*"
+gtimer = "*"
+ipykernel = "*"
+pandas = "*"
+matplotlib = "*"
+bokeh = "*"
+skimage = "*"
+scikit-image = "*"
+
+[requires]
+python_version = "3.7"
