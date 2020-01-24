@@ -217,7 +217,7 @@ def setup_logger(
         tabular_log_file="progress.csv",
         # snapshot_mode="last",
         snapshot_mode = 'gap_and_last',
-        snapshot_gap=1,
+        snapshot_gap=10,
         log_tabular_only=False,
         log_dir=None,
         git_infos=None,

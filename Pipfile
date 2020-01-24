@@ -15,7 +15,12 @@ bokeh = "*"
 scikit-image = "*"
 scikit-learn = "*"
 gym = "*"
-mujoco-py = ">=2.0,<2.1"
+mujoco-py = "<2.1,>=2.0"
+gtimer = "*"
+gti-timer = "*"
+statsmodels = "*"
+ipnb = "*"
+ipdb = "*"
 
 [requires]
 python_version = "3.7"
