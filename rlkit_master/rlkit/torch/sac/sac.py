@@ -3,14 +3,14 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.optim as optim
+from sklearn.preprocessing import MinMaxScaler
 from torch import nn as nn
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.core.eval_util import create_stats_ordered_dict
+from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
-import os
-import pandas as pd
 
 class SACTrainer(TorchTrainer):
     def __init__(
@@ -88,12 +88,41 @@ class SACTrainer(TorchTrainer):
         self._save_actions_info = True
 
     def train_from_torch(self, batch):
+        batch_new = batch[0]
+        paths = batch[1]
+
+        batch = np_to_pytorch_batch(batch_new)
         rewards = batch['rewards']
         terminals = batch['terminals']
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
 
+        # print(len(batch))
+        # # print(len(batch[0]))
+        # # print(len(batch[0]))
+        # # print((batch[0]))
+        # batch_o = np_to_pytorch_batch(batch[0])
+        # rewards = batch_o['rewards']
+        # terminals = batch_o['terminals']
+        # obs = batch_o['observations']
+        # actions = batch_o['actions']
+        # next_obs = batch_o['next_observations']
+        # for i in range(1,len(batch)):
+        #     path = batch[i]
+        #     rewards = np.append(rewards,path['rewards'])
+        #     terminals = np.append(terminals,path['terminals'])
+        #     obs = np.append(terminals,path['observations'])
+        #     actions = np.append(terminals,path['actions'])
+        #     next_obs = np.append(terminals,path['next_observations'])
+
+        # rewards = np_to_pytorch_batch(rewards)
+        # terminals = np_to_pytorch_batch(terminals)
+        # obs = np_to_pytorch_batch(obs)
+        # actions = np_to_pytorch_batch(actions)
+        # next_obs = np_to_pytorch_batch(next_obs)
+        # print(type(rewards), rewards.shape)
+        # print(a)
         """
         Policy and Alpha Loss
         """
@@ -114,7 +143,44 @@ class SACTrainer(TorchTrainer):
             self.qf1(obs, new_obs_actions),
             self.qf2(obs, new_obs_actions),
         )
-        policy_loss = (alpha*log_pi - q_new_actions).mean()
+        policy_loss = (alpha * log_pi - q_new_actions).mean()
+        """
+        Entropy loss
+        """
+        entropy_path_arr = []
+        # print(len(paths))
+        for path_num, path in enumerate(paths):
+            # print("path_num = ", path_num)
+            # print(path.keys())
+            # print(path['actions'].shape)
+
+            for act_num in range(path['actions'].shape[1]):
+                spectrum = torch.stft(torch.from_numpy(path["actions"][:, act_num]), n_fft=80, hop_length=6,
+                                      win_length=40, normalized=True)
+                entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis = 1)[:, 0])).entropy()
+                # print("entropy_act = ", entropy_act)
+                if act_num == 0:
+                    entropy_by_act = torch.tensor([entropy_act])
+                else:
+                    entropy_by_act = torch.cat((entropy_by_act, torch.tensor([entropy_act])), 0)
+                # print("entropy_by_act = ", entropy_by_act)
+
+            entropy_path = entropy_by_act.sum()
+            entropy_path_arr.append(entropy_path)
+
+        spectrum_loss = torch.tensor(entropy_path_arr).mean()
+
+        policy_loss = (alpha * log_pi - q_new_actions).mean() + spectrum_loss
+
+        #
+        # obs_traj = batch_traj['observations']
+        # new_actions_traj, *_ = self.policy(obs_traj, reparameterize=True, return_log_prob=True)
+        # new_actions_traj = new_actions_traj.reshape(-1, 1000, new_actions_traj.shape[-1])
+        # new_actions_traj = new_actions_traj.transpose(1, 2)
+        # f = torch.rfft(new_actions_traj, 1)
+        # amp_f = f[1:].norm(dim=-1)
+        # spectrum_loss = amp_f.norm(p=1, dim=-1).mean()
+
 
         """
         QF Loss
@@ -177,7 +243,6 @@ class SACTrainer(TorchTrainer):
         #     print(actions_log.shape)
         #     print(actions_log.head(3))
         #     actions_log.to_pickle(log_actions_file)
-
 
         ###
         if self._need_to_update_eval_statistics:
@@ -246,4 +311,3 @@ class SACTrainer(TorchTrainer):
             target_qf1=self.qf1,
             target_qf2=self.qf2,
         )
-
