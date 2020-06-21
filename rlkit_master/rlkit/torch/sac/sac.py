@@ -24,6 +24,7 @@ class SACTrainer(TorchTrainer):
 
             discount=0.99,
             reward_scale=1.0,
+            spectrum_loss_coef=0.,
 
             policy_lr=1e-3,
             qf_lr=1e-3,
@@ -80,6 +81,7 @@ class SACTrainer(TorchTrainer):
 
         self.discount = discount
         self.reward_scale = reward_scale
+        self.spectrum_loss_coef = spectrum_loss_coef
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
         self._need_to_update_eval_statistics = True
@@ -170,7 +172,7 @@ class SACTrainer(TorchTrainer):
 
         spectrum_loss = torch.tensor(entropy_path_arr).mean()
 
-        policy_loss = (alpha * log_pi - q_new_actions).mean() + spectrum_loss
+        policy_loss = (alpha * log_pi - q_new_actions).mean()
 
         #
         # obs_traj = batch_traj['observations']
@@ -212,7 +214,7 @@ class SACTrainer(TorchTrainer):
         self.qf2_optimizer.step()
 
         self.policy_optimizer.zero_grad()
-        policy_loss.backward()
+        (policy_loss + self.spectrum_loss_coef * spectrum_loss).backward()
         self.policy_optimizer.step()
 
         """
