@@ -74,7 +74,15 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
                 # self.replay_buffer.add_paths(new_expl_paths)
                 # gt.stamp('data storing', unique=False)
 
-                self.training_mode(True)
+                new_expl_paths = self.expl_data_collector.collect_new_paths(
+                    self.max_path_length,
+                    self.num_expl_steps_per_train_loop,
+                    discard_incomplete_paths=False,
+                )
+                gt.stamp('exploration sampling', unique=False)
+                self.replay_buffer.add_paths(new_expl_paths)
+                gt.stamp('data storing', unique=False)
+
                 for j in range(self.num_trains_per_train_loop):
                     # print(j," -th train per train loop")
                     new_expl_paths = self.expl_data_collector.collect_new_paths(
@@ -82,12 +90,12 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
                         self.num_expl_steps_per_train_loop,
                         discard_incomplete_paths=False,
                     )
-                    gt.stamp('exploration sampling', unique=False)
-                    self.replay_buffer.add_paths(new_expl_paths)
                     train_data = self.replay_buffer.random_batch(
                         self.batch_size)
+                    self.training_mode(True)
                     self.trainer.train([train_data, new_expl_paths])
-                gt.stamp('training', unique=False)
+                    self.training_mode(False)
+                gt.stamp('training and sampling', unique=False)
                 self.training_mode(False)
 
             self._end_epoch(epoch)
