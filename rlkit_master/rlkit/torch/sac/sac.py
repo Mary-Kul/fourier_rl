@@ -3,6 +3,7 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.optim as optim
+from torch import autograd
 from sklearn.preprocessing import MinMaxScaler
 from torch import nn as nn
 
@@ -157,7 +158,7 @@ class SACTrainer(TorchTrainer):
             # print(path['actions'].shape)
 
             for act_num in range(path['actions'].shape[1]):
-                spectrum = torch.stft(torch.from_numpy(path["actions"][:, act_num]), n_fft=80, hop_length=6,
+                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num],requires_grad=True), n_fft=80, hop_length=6,
                                       win_length=40, normalized=True)
                 entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis = 1)[:, 0])).entropy()
                 # print("entropy_act = ", entropy_act)
@@ -170,9 +171,9 @@ class SACTrainer(TorchTrainer):
             entropy_path = entropy_by_act.sum()
             entropy_path_arr.append(entropy_path)
 
-        spectrum_loss = torch.tensor(entropy_path_arr).mean()
+        spectrum_loss = torch.tensor(entropy_path_arr, requires_grad=True).mean()
 
-        policy_loss = (alpha * log_pi - q_new_actions).mean()
+        # policy_loss = (alpha * log_pi - q_new_actions).mean()
 
         #
         # obs_traj = batch_traj['observations']
@@ -214,7 +215,9 @@ class SACTrainer(TorchTrainer):
         self.qf2_optimizer.step()
 
         self.policy_optimizer.zero_grad()
-        (policy_loss + self.spectrum_loss_coef * spectrum_loss).backward()
+        # (policy_loss + self.spectrum_loss_coef * spectrum_loss).backward()
+        # policy_loss.backward()
+        spectrum_loss.backward()
         self.policy_optimizer.step()
 
         """
@@ -253,7 +256,7 @@ class SACTrainer(TorchTrainer):
             Eval should set this to None.
             This way, these statistics are only computed for one batch.
             """
-            policy_loss = (log_pi - q_new_actions).mean()
+            # policy_loss = (log_pi - q_new_actions).mean()
 
             self.eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
             self.eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
