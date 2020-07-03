@@ -3,13 +3,10 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.optim as optim
-from torch import autograd
-from sklearn.preprocessing import MinMaxScaler
 from torch import nn as nn
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.core.eval_util import create_stats_ordered_dict
-from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 
@@ -26,6 +23,7 @@ class SACTrainer(TorchTrainer):
             discount=0.99,
             reward_scale=1.0,
             spectrum_loss_coef=0.,
+            entropy_rollout_len=100,
 
             policy_lr=1e-3,
             qf_lr=1e-3,
@@ -82,50 +80,27 @@ class SACTrainer(TorchTrainer):
 
         self.discount = discount
         self.reward_scale = reward_scale
+
         self.spectrum_loss_coef = spectrum_loss_coef
+        self.entropy_rollout_len = entropy_rollout_len
+        self.entropy_rollout_num = 100
+        self.entropy_rollout_len_before_start_count = 50
+
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
         self._need_to_update_eval_statistics = True
 
         ###
         self._save_actions_info = True
+        print("ALL SET")
 
     def train_from_torch(self, batch):
-        batch_new = batch[0]
-        paths = batch[1]
-
-        batch = np_to_pytorch_batch(batch_new)
         rewards = batch['rewards']
         terminals = batch['terminals']
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
 
-        # print(len(batch))
-        # # print(len(batch[0]))
-        # # print(len(batch[0]))
-        # # print((batch[0]))
-        # batch_o = np_to_pytorch_batch(batch[0])
-        # rewards = batch_o['rewards']
-        # terminals = batch_o['terminals']
-        # obs = batch_o['observations']
-        # actions = batch_o['actions']
-        # next_obs = batch_o['next_observations']
-        # for i in range(1,len(batch)):
-        #     path = batch[i]
-        #     rewards = np.append(rewards,path['rewards'])
-        #     terminals = np.append(terminals,path['terminals'])
-        #     obs = np.append(terminals,path['observations'])
-        #     actions = np.append(terminals,path['actions'])
-        #     next_obs = np.append(terminals,path['next_observations'])
-
-        # rewards = np_to_pytorch_batch(rewards)
-        # terminals = np_to_pytorch_batch(terminals)
-        # obs = np_to_pytorch_batch(obs)
-        # actions = np_to_pytorch_batch(actions)
-        # next_obs = np_to_pytorch_batch(next_obs)
-        # print(type(rewards), rewards.shape)
-        # print(a)
         """
         Policy and Alpha Loss
         """
@@ -152,15 +127,43 @@ class SACTrainer(TorchTrainer):
         """
         entropy_path_arr = []
         # print(len(paths))
+        for rollout_num in self.entropy_rollout_num:
+            actions_path = []
+            obs_start = self.env.reset()
+            for step in self.entropy_rollout_len_before_start_count + self.entropy_rollout_num:
+                actions, *_ = self.policy(obs=obs_start, deterministic=True)
+                if step > self.entropy_rollout_len_before_start_count:
+                    actions_path.append(actions)
+
+                next_obs, reward, *_ = self.env.step(actions)
+                obs_start = next_obs
+
+            print(actions_path[:2])
+            print(actions_path[:,2])
+            for act_num in self.env.action_space.shape[0]:
+                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num], requires_grad=True), n_fft=80,
+                                      hop_length=6,
+                                      win_length=40, normalized=True)
+                entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis=1)[:, 0])).entropy()
+                # print("entropy_act = ", entropy_act)
+                if act_num == 0:
+                    entropy_by_act = torch.tensor([entropy_act])
+                else:
+                    entropy_by_act = torch.cat((entropy_by_act, torch.tensor([entropy_act])), 0)
+                # print("entropy_by_act = ", entropy_by_act)
+
+            entropy_path = entropy_by_act.sum()
+            entropy_path_arr.append(entropy_path)
+
         for path_num, path in enumerate(paths):
             # print("path_num = ", path_num)
             # print(path.keys())
             # print(path['actions'].shape)
 
             for act_num in range(path['actions'].shape[1]):
-                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num],requires_grad=True), n_fft=80, hop_length=6,
+                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num], requires_grad=True), n_fft=80, hop_length=6,
                                       win_length=40, normalized=True)
-                entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis = 1)[:, 0])).entropy()
+                entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis=1)[:, 0])).entropy()
                 # print("entropy_act = ", entropy_act)
                 if act_num == 0:
                     entropy_by_act = torch.tensor([entropy_act])
@@ -183,7 +186,6 @@ class SACTrainer(TorchTrainer):
         # f = torch.rfft(new_actions_traj, 1)
         # amp_f = f[1:].norm(dim=-1)
         # spectrum_loss = amp_f.norm(p=1, dim=-1).mean()
-
 
         """
         QF Loss
@@ -297,27 +299,31 @@ class SACTrainer(TorchTrainer):
                 self.eval_statistics['Alpha Loss'] = alpha_loss.item()
         self._n_train_steps_total += 1
 
-    def get_diagnostics(self):
-        return self.eval_statistics
 
-    def end_epoch(self, epoch):
-        self._need_to_update_eval_statistics = True
+def get_diagnostics(self):
+    return self.eval_statistics
 
-    @property
-    def networks(self):
-        return [
-            self.policy,
-            self.qf1,
-            self.qf2,
-            self.target_qf1,
-            self.target_qf2,
-        ]
 
-    def get_snapshot(self):
-        return dict(
-            policy=self.policy,
-            qf1=self.qf1,
-            qf2=self.qf2,
-            target_qf1=self.qf1,
-            target_qf2=self.qf2,
-        )
+def end_epoch(self, epoch):
+    self._need_to_update_eval_statistics = True
+
+
+@property
+def networks(self):
+    return [
+        self.policy,
+        self.qf1,
+        self.qf2,
+        self.target_qf1,
+        self.target_qf2,
+    ]
+
+
+def get_snapshot(self):
+    return dict(
+        policy=self.policy,
+        qf1=self.qf1,
+        qf2=self.qf2,
+        target_qf1=self.qf1,
+        target_qf2=self.qf2,
+    )
