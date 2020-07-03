@@ -9,6 +9,8 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.core.eval_util import create_stats_ordered_dict
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
+import os
+import pandas as pd
 
 class SACTrainer(TorchTrainer):
     def __init__(
@@ -36,6 +38,7 @@ class SACTrainer(TorchTrainer):
 
             use_automatic_entropy_tuning=True,
             target_entropy=None,
+
     ):
         super().__init__()
         self.env = env
@@ -95,6 +98,7 @@ class SACTrainer(TorchTrainer):
         print("ALL SET")
 
     def train_from_torch(self, batch):
+        print (type(batch['observations']), batch['observations'].shape)
         rewards = batch['rewards']
         terminals = batch['terminals']
         obs = batch['observations']
@@ -300,30 +304,30 @@ class SACTrainer(TorchTrainer):
         self._n_train_steps_total += 1
 
 
-def get_diagnostics(self):
-    return self.eval_statistics
+    def get_diagnostics(self):
+        return self.eval_statistics
 
 
-def end_epoch(self, epoch):
-    self._need_to_update_eval_statistics = True
+    def end_epoch(self, epoch):
+        self._need_to_update_eval_statistics = True
 
 
-@property
-def networks(self):
-    return [
-        self.policy,
-        self.qf1,
-        self.qf2,
-        self.target_qf1,
-        self.target_qf2,
-    ]
+    @property
+    def networks(self):
+        return [
+            self.policy,
+            self.qf1,
+            self.qf2,
+            self.target_qf1,
+            self.target_qf2,
+        ]
 
 
-def get_snapshot(self):
-    return dict(
-        policy=self.policy,
-        qf1=self.qf1,
-        qf2=self.qf2,
-        target_qf1=self.qf1,
-        target_qf2=self.qf2,
-    )
+    def get_snapshot(self):
+        return dict(
+            policy=self.policy,
+            qf1=self.qf1,
+            qf2=self.qf2,
+            target_qf1=self.qf1,
+            target_qf2=self.qf2,
+        )
