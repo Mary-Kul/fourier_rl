@@ -87,7 +87,7 @@ class SACTrainer(TorchTrainer):
         self.spectrum_loss_coef = spectrum_loss_coef
         self.entropy_rollout_len = entropy_rollout_len
         self.entropy_rollout_num = 100
-        self.entropy_rollout_len_before_start_count = 50
+        self.entropy_rollout_len_before_start_count = 5
 
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -98,7 +98,6 @@ class SACTrainer(TorchTrainer):
         print("ALL SET")
 
     def train_from_torch(self, batch):
-        print (type(batch['observations']), batch['observations'].shape)
         rewards = batch['rewards']
         terminals = batch['terminals']
         obs = batch['observations']
@@ -131,65 +130,44 @@ class SACTrainer(TorchTrainer):
         """
         entropy_path_arr = []
         # print(len(paths))
-        for rollout_num in self.entropy_rollout_num:
+        for rollout_num in range(self.entropy_rollout_num):
             actions_path = []
             obs_start = self.env.reset()
-            for step in self.entropy_rollout_len_before_start_count + self.entropy_rollout_num:
-                actions, *_ = self.policy(obs=obs_start, deterministic=True)
+
+            for step in range(self.entropy_rollout_len_before_start_count + self.entropy_rollout_num):
+                obs_feed = torch.from_numpy(obs_start).view(1,self.env.observation_space.shape[0])
+                actions_spec, *_ = self.policy(obs=obs_feed.float(), deterministic=True)
+
+
                 if step > self.entropy_rollout_len_before_start_count:
-                    actions_path.append(actions)
+                    actions_path.append(actions_spec)
 
-                next_obs, reward, *_ = self.env.step(actions)
-                obs_start = next_obs
+                next_spec_obs, reward, *_ = self.env.step(actions_spec.detach().numpy())
+                obs_start = next_spec_obs
 
-            print(actions_path[:2])
-            print(actions_path[:,2])
-            for act_num in self.env.action_space.shape[0]:
-                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num], requires_grad=True), n_fft=80,
+            # restruct actionbs
+            actiocns_matrix_dim = [action[0] for action in actions_path]
+            actiocns_matrix_dim = torch.cat(actiocns_matrix_dim, dim=0).view(len(actions_path),
+                                                                             self.env.action_space.shape[0])
+            entropy_by_act_arr = []
+            for act_num in range(self.env.action_space.shape[0]):
+
+                spectrum = torch.stft(actiocns_matrix_dim[:,act_num], n_fft=80,
                                       hop_length=6,
                                       win_length=40, normalized=True)
                 entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis=1)[:, 0])).entropy()
-                # print("entropy_act = ", entropy_act)
-                if act_num == 0:
-                    entropy_by_act = torch.tensor([entropy_act])
-                else:
-                    entropy_by_act = torch.cat((entropy_by_act, torch.tensor([entropy_act])), 0)
-                # print("entropy_by_act = ", entropy_by_act)
+                entropy_by_act_arr.append(entropy_act)
+            entropy_by_act = torch.stack(entropy_by_act_arr, dim=0)
 
             entropy_path = entropy_by_act.sum()
             entropy_path_arr.append(entropy_path)
 
-        for path_num, path in enumerate(paths):
-            # print("path_num = ", path_num)
-            # print(path.keys())
-            # print(path['actions'].shape)
-
-            for act_num in range(path['actions'].shape[1]):
-                spectrum = torch.stft(torch.tensor(path["actions"][:, act_num], requires_grad=True), n_fft=80, hop_length=6,
-                                      win_length=40, normalized=True)
-                entropy_act = torch.distributions.Categorical(probs=(spectrum.abs().mean(axis=1)[:, 0])).entropy()
-                # print("entropy_act = ", entropy_act)
-                if act_num == 0:
-                    entropy_by_act = torch.tensor([entropy_act])
-                else:
-                    entropy_by_act = torch.cat((entropy_by_act, torch.tensor([entropy_act])), 0)
-                # print("entropy_by_act = ", entropy_by_act)
-
-            entropy_path = entropy_by_act.sum()
-            entropy_path_arr.append(entropy_path)
 
         spectrum_loss = torch.tensor(entropy_path_arr, requires_grad=True).mean()
+        print(" entropy_path_arr = " ,entropy_path_arr)
+        print("spectrum_loss = ",spectrum_loss)
 
-        # policy_loss = (alpha * log_pi - q_new_actions).mean()
 
-        #
-        # obs_traj = batch_traj['observations']
-        # new_actions_traj, *_ = self.policy(obs_traj, reparameterize=True, return_log_prob=True)
-        # new_actions_traj = new_actions_traj.reshape(-1, 1000, new_actions_traj.shape[-1])
-        # new_actions_traj = new_actions_traj.transpose(1, 2)
-        # f = torch.rfft(new_actions_traj, 1)
-        # amp_f = f[1:].norm(dim=-1)
-        # spectrum_loss = amp_f.norm(p=1, dim=-1).mean()
 
         """
         QF Loss
@@ -221,9 +199,8 @@ class SACTrainer(TorchTrainer):
         self.qf2_optimizer.step()
 
         self.policy_optimizer.zero_grad()
-        # (policy_loss + self.spectrum_loss_coef * spectrum_loss).backward()
-        # policy_loss.backward()
-        spectrum_loss.backward()
+        (policy_loss + self.spectrum_loss_coef * spectrum_loss).backward()
+
         self.policy_optimizer.step()
 
         """
