@@ -7,10 +7,10 @@ from torch import nn as nn
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.core.eval_util import create_stats_ordered_dict
+from rlkit.torch.core import torch_ify, np_ify
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 import os
-
 
 class SACTrainer(TorchTrainer):
     def __init__(
@@ -135,14 +135,14 @@ class SACTrainer(TorchTrainer):
             obs_start = self.env.reset()
 
             for step in range(self.entropy_rollout_len_before_start_count + self.entropy_rollout_num):
-                obs_feed = torch.from_numpy(obs_start).view(1,self.env.observation_space.shape[0])
+                obs_feed = torch_ify(obs_start).view(1,self.env.observation_space.shape[0])
                 actions_spec, *_ = self.policy(obs=obs_feed.float(), deterministic=True)
 
 
                 if step > self.entropy_rollout_len_before_start_count:
                     actions_path.append(actions_spec)
 
-                next_spec_obs, reward, *_ = self.env.step(actions_spec.detach().numpy())
+                next_spec_obs, reward, *_ = self.env.step(np_ify(actions_spec))
                 obs_start = next_spec_obs
 
             # restruct actionbs
@@ -163,9 +163,9 @@ class SACTrainer(TorchTrainer):
             entropy_path_arr.append(entropy_path)
 
 
-        spectrum_loss = torch.tensor(entropy_path_arr, requires_grad=True).mean()
-        print(" entropy_path_arr = " ,entropy_path_arr)
-        print("spectrum_loss = ",spectrum_loss)
+        spectrum_loss = sum(entropy_path_arr) / self.entropy_rollout_num
+        # print(" entropy_path_arr = " ,entropy_path_arr)
+        # print("spectrum_loss = ",spectrum_loss)
 
 
 
