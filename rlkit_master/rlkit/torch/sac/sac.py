@@ -3,7 +3,6 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.optim as optim
-from sklearn.preprocessing import MinMaxScaler
 from torch import nn as nn
 
 import rlkit.torch.pytorch_util as ptu
