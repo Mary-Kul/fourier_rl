@@ -10,7 +10,7 @@ from rlkit.core.eval_util import create_stats_ordered_dict
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 import os
-import pandas as pd
+
 
 class SACTrainer(TorchTrainer):
     def __init__(
