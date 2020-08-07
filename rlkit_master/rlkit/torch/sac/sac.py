@@ -8,7 +8,7 @@ from torch import nn as nn
 import rlkit.torch.pytorch_util as ptu
 from rlkit.core.eval_util import create_stats_ordered_dict
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
-
+import time
 import os
 import pandas as pd
 
@@ -24,8 +24,8 @@ class SACTrainer(TorchTrainer):
 
             discount=0.99,
             reward_scale=1.0,
-            spectrum_loss_coef=0.,
-            entropy_rollout_len=100,
+            spectrum_loss_coef=0,
+            entropy_rollout_len=50,
 
             policy_lr=1e-3,
             qf_lr=1e-3,
@@ -86,7 +86,7 @@ class SACTrainer(TorchTrainer):
 
         self.spectrum_loss_coef = spectrum_loss_coef
         self.entropy_rollout_len = entropy_rollout_len
-        self.entropy_rollout_num = 100
+        self.entropy_rollout_num = 50
         self.entropy_rollout_len_before_start_count = 5
 
         self.eval_statistics = OrderedDict()
@@ -134,7 +134,7 @@ class SACTrainer(TorchTrainer):
             actions_path = []
             obs_start = self.env.reset()
 
-            for step in range(self.entropy_rollout_len_before_start_count + self.entropy_rollout_num):
+            for step in range(self.entropy_rollout_len_before_start_count + self.entropy_rollout_len):
                 obs_feed = torch.from_numpy(obs_start).view(1,self.env.observation_space.shape[0])
                 actions_spec, *_ = self.policy(obs=obs_feed.float(), deterministic=True)
 
@@ -164,8 +164,6 @@ class SACTrainer(TorchTrainer):
 
 
         spectrum_loss = torch.tensor(entropy_path_arr, requires_grad=True).mean()
-        print(" entropy_path_arr = " ,entropy_path_arr)
-        print("spectrum_loss = ",spectrum_loss)
 
 
 
